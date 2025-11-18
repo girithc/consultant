@@ -1,0 +1,11 @@
+langchain-core
+langchain-community
+langgraph
+langchain-huggingface
+optimum
+transformers==4.41.2
+accelerate==0.31.0
+torch==2.2.2
+numpy<2
+sentence-transformers
+faiss-cpu
