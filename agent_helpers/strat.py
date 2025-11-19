@@ -4,30 +4,44 @@ from .prompts import top_hypothesis_prompt, breakdown_prompt
 from .types import AgentState, Hypothesis, WorkItem 
 # ---
 
-# --- Custom JSON Parser ---
+# --- Import for Automated Printing (Must be available in agent_helpers.agent) ---
+# NOTE: This import assumes the print_tree function is defined in agent.py and 
+# is accessible for import.
+from agent_helpers.functions import print_tree 
+# ---
+
+# --- Custom JSON Parser (Same as original) ---
 import json
 import re
 
-def parse_json_from_string(text: str) -> dict:
-    assistant_tag = "<|assistant|>"
-    assistant_index = text.rfind(assistant_tag)
-    search_text = text[assistant_index + len(assistant_tag):] if assistant_index != -1 else text
+# Updated parse_json_from_string function (in strat.py and research.py)
 
+def parse_json_from_string(text: str) -> dict:
+    # 1. Strip the common Qwen/Instruct tags to isolate the final response
+    search_text = text.rfind("<|assistant|>")
+    if search_text != -1:
+        search_text = text[search_text + len("<|assistant|>"):]
+    else:
+        search_text = text
+
+    # 2. Aggressively search for a JSON structure (either wrapped in ```json or bare)
+    # The regex targets the innermost JSON or the largest JSON block.
     json_match = re.search(r"```json\s*(\{.*?\})\s*```|(\{.*?\})", search_text, re.DOTALL)
     
     if json_match:
         json_str = json_match.group(1) or json_match.group(2)
         try:
-            return json.loads(json_str)
+            # 3. Clean up the string slightly before loading (e.g., stripping whitespace)
+            return json.loads(json_str.strip())
         except json.JSONDecodeError as e:
+            # Print a clean error message, not the entire prompt dump
             print(f"--- JSONDecodeError ---")
-            print(f"Could not parse: {json_str}")
+            print(f"Failed to parse JSON (start of string): {json_str[:200]}...")
             print(f"Error: {e}")
             return {"error": "Failed to parse JSON", "raw_text": text}
     else:
-        print(f"--- No valid JSON object found after <|assistant|> tag ---")
+        print(f"--- No valid JSON object found ---")
         return {"error": "No JSON object found", "raw_text": text}
-
 # --- Strategist Agent ---
 
 class StrategistAgent:
@@ -67,17 +81,19 @@ class StrategistAgent:
         
         log_entry = f"Formulated top hypothesis (1): '{hypothesis_text}'. Reasoning: {reasoning}"
         
-        # --- FIXED BUGS ---
         # 1. Add the next job to the to-do list
         new_work_item = WorkItem(id="1", action="breakdown")
+        
+        # --- NEW: Print Tree after Level 1 is formulated ---
+        print_tree([top_hypothesis], title="HYPOTHESIS TREE - LEVEL 1 FORMULATED")
+        # --- END NEW ---
         
         return {
             "hypothesis_tree": [top_hypothesis],
             "explainability_log": [log_entry],
-            "nodes_to_process": [new_work_item], # <-- ADDED
-            "last_completed_item_id": "1"       # <-- ADDED
+            "nodes_to_process": [new_work_item],
+            "last_completed_item_id": "1"
         }
-        # --- END FIX ---
 
     def breakdown_hypothesis(self, state: AgentState) -> dict:
         """Takes one hypothesis from the 'to_breakdown' queue and breaks it down."""
@@ -101,7 +117,8 @@ class StrategistAgent:
             print(log_entry)
             return {
                 "nodes_to_process": remaining_nodes_to_process, # Remove failed item
-                "explainability_log": [log_entry]
+                "explainability_log": [log_entry],
+                "last_completed_item_id": parent_id # Still track completion
             }
 
         sub_hypotheses_list = response.get("sub_hypotheses", [])
@@ -112,8 +129,12 @@ class StrategistAgent:
         new_nodes = []
         new_work_items = []
         
+        # Determine the next index based on the number of existing children
+        existing_children = [h for h in state["hypothesis_tree"] if h["parent_id"] == parent_id]
+        next_index = len(existing_children) + 1
+        
         for i, sub_h in enumerate(sub_hypotheses_list):
-            node_id = f"{parent_id}.{i+1}"
+            node_id = f"{parent_id}.{i + next_index}" # Use the calculated starting index
             node_text = sub_h.get("text", "No text provided")
             
             new_node = Hypothesis(
@@ -124,14 +145,20 @@ class StrategistAgent:
                 is_leaf=False
             )
             new_nodes.append(new_node)
-            new_work_items.append(WorkItem(id=node_id, action="classify"))
+            # All new nodes start with 'breakdown' to ensure depth is achieved
+            new_work_items.append(WorkItem(id=node_id, action="breakdown")) 
             log_entry += f"\n  - Created ({node_id}): '{node_text}'"
 
-        # --- FIXED BUG ---
+        new_tree = state["hypothesis_tree"] + new_nodes
+        
+        # --- NEW: Print Tree after breakdown is complete ---
+        print_tree(new_tree, title=f"HYPOTHESIS TREE - BREAKDOWN OF {parent_id}")
+        # --- END NEW ---
+        
         return {
-            "hypothesis_tree": state["hypothesis_tree"] + new_nodes,
-            "nodes_to_process": remaining_nodes_to_process + new_work_items,
+            "hypothesis_tree": new_tree,
+            # Prepend new work items to the remaining list for Depth-First expansion
+            "nodes_to_process": new_work_items + remaining_nodes_to_process, 
             "explainability_log": [log_entry],
-            "last_completed_item_id": parent_id # <-- ADDED
+            "last_completed_item_id": parent_id 
         }
-        # --- END FIX ---

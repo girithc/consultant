@@ -1,31 +1,15 @@
+from agent_helpers.strat import parse_json_from_string
 from langchain_core.output_parsers import StrOutputParser
 from .prompts import classifier_prompt, analysis_prompt, source_prompt
 from agent_helpers.tools import VectorStore, simulated_web_search
 from agent_helpers.types import AgentState, Analysis, WorkItem # Import types from main
+from agent_helpers.functions import print_tree 
+
 
 # --- Custom JSON Parser (copied from old file) ---
 import json
 import re
 
-def parse_json_from_string(text: str) -> dict:
-    assistant_tag = "<|assistant|>"
-    assistant_index = text.rfind(assistant_tag)
-    search_text = text[assistant_index + len(assistant_tag):] if assistant_index != -1 else text
-
-    json_match = re.search(r"```json\s*(\{.*?\})\s*```|(\{.*?\})", search_text, re.DOTALL)
-    
-    if json_match:
-        json_str = json_match.group(1) or json_match.group(2)
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError as e:
-            print(f"--- JSONDecodeError ---")
-            print(f"Could not parse: {json_str}")
-            print(f"Error: {e}")
-            return {"error": "Failed to parse JSON", "raw_text": text}
-    else:
-        print(f"--- No valid JSON object found after <|assistant|> tag ---")
-        return {"error": "No JSON object found", "raw_text": text}
 
 # --- Research Agent ---
 
@@ -111,10 +95,16 @@ class ResearchAgent:
         # This is the item to be reviewed by the user
         state["last_completed_item_id"] = node_id
         
+        updated_tree = [h if h["id"] != node_id else node for h in state["hypothesis_tree"]]
+
+# Call the new print function
+        print_tree(updated_tree, title="HYPOTHESIS TREE - UPDATED CLASSIFICATION")
+
         return {
             "hypothesis_tree": updated_tree,
             "nodes_to_process": new_nodes_to_process,
-            "explainability_log": [log_entry]
+            "explainability_log": [log_entry],
+            "last_completed_item_id": node_id
         }
 
     def identify_analysis(self, state: AgentState) -> dict:
