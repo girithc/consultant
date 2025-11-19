@@ -1,18 +1,23 @@
 from langchain_core.prompts import ChatPromptTemplate
 
-# Note: The 'context' variable will be filled by the Research Agent
-# with RAG results from the vector store and web search.
-# For the Strategist, 'context' will be an empty string.
-
+# 1. ROOT HYPOTHESIS WITH CONTEXT
 top_hypothesis_prompt = ChatPromptTemplate.from_template(
     """
     <|system|>
-    You are a senior McKinsey consultant. Your task is to define a single, high-level, testable hypothesis for a client's problem.
-    Respond in JSON format with two keys:
-    1. "hypothesis_text": The single hypothesis.
-    2. "reasoning": Your expert reasoning for this as the top-level hypothesis.
+    You are a senior McKinsey consultant. 
+    First, analyze the provided RESEARCH CONTEXT to understand the reality of the problem.
+    Then, define exactly 2 distinct, high-level ROOT hypotheses.
     
-    Important: Respond *only* with the raw JSON object.
+    Context from Web/Memory:
+    {context}
+    
+    Respond in JSON format:
+    {{
+        "hypotheses": [
+            {{ "text": "Hypothesis 1...", "reasoning": "Based on research..." }},
+            {{ "text": "Hypothesis 2...", "reasoning": "Based on research..." }}
+        ]
+    }}
     <|end|>
     <|user|>
     Problem: "{problem}"
@@ -22,41 +27,42 @@ top_hypothesis_prompt = ChatPromptTemplate.from_template(
     """
 )
 
+# 2. BREAKDOWN WITH CONTEXT
 breakdown_prompt = ChatPromptTemplate.from_template(
     """
     <|system|>
-    You are a senior McKinsey consultant. Break down the given hypothesis into 2-4 MECE sub-hypotheses.
-    Respond in JSON format with two keys:
-    1. "sub_hypotheses": A list of dictionaries, where each has a "text" key.
-    2. "reasoning": Your reasoning for this MECE breakdown.
+    You are a senior McKinsey consultant. 
+    Use the provided RESEARCH CONTEXT to identify real-world drivers for this hypothesis.
+    Break it down into EXACTLY 2 sub-hypotheses.
     
-    Important: Respond *only* with the raw JSON object.
+    Context from Web/Memory:
+    {context}
+    
+    Respond in JSON format:
+    {{
+        "sub_hypotheses": [
+            {{ "text": "Sub-hypothesis A..." }},
+            {{ "text": "Sub-hypothesis B..." }}
+        ],
+        "reasoning": "Why these drivers?"
+    }}
     <|end|>
     <|user|>
-    Main Hypothesis: "{hypothesis_text}"
+    Parent Hypothesis: "{hypothesis_text}"
     JSON:
     <|end|>
     <|assistant|>
     """
 )
 
+# (Classifier, Analysis, Source prompts remain same)
 classifier_prompt = ChatPromptTemplate.from_template(
-    """
-    <|system|>
-    You are a McKinsey analyst. Classify the hypothesis as "leaf" (directly testable) or "branch" (needs more breakdown).
-    
-    Use the provided context to inform your decision.
-    
-    Respond in JSON format with two keys:
-    1. "classification": Either "leaf" or "branch".
-    2. "reasoning": Your reasoning for this classification.
-    
-    Important: Respond *only* with the raw JSON object.
+    """<|system|>
+    Classify as "leaf" (testable) or "branch".
+    Context: {context}
+    Respond JSON: {{ "classification": "leaf" or "branch", "reasoning": "..." }}
     <|end|>
     <|user|>
-    Context From Research:
-    {context}
-    
     Hypothesis: "{hypothesis_text}"
     JSON:
     <|end|>
@@ -65,22 +71,12 @@ classifier_prompt = ChatPromptTemplate.from_template(
 )
 
 analysis_prompt = ChatPromptTemplate.from_template(
-    """
-    <|system|>
-    You are a McKinsey analyst. For the given *testable leaf hypothesis*, what specific data or analysis is required to prove or disprove it?
-    
-    Use the provided context to find a source.
-    
-    Respond in JSON format with two keys:
-    1. "analysis_required": The specific data/analysis needed.
-    2. "reasoning": Why this analysis will test the hypothesis.
-    
-    Important: Respond *only* with the raw JSON object.
+    """<|system|>
+    What data proves this?
+    Context: {context}
+    Respond JSON: {{ "analysis_required": "...", "reasoning": "..." }}
     <|end|>
     <|user|>
-    Context From Research:
-    {context}
-    
     Leaf Hypothesis: "{hypothesis_text}"
     JSON:
     <|end|>
@@ -89,23 +85,13 @@ analysis_prompt = ChatPromptTemplate.from_template(
 )
 
 source_prompt = ChatPromptTemplate.from_template(
-    """
-    <|system|>
-    You are a McKinsey data expert. For the required analysis, what is the *most likely source* (your "source of reference")?
-    
-    Use the provided context (especially web search and internal documents) to find the source.
-    
-    Respond in JSON format with two keys:
-    1. "source": The likely source (e.g., "Client's Salesforce CRM", "External market report from 'Nielsen'").
-    2. "reasoning": Why you believe this is the correct source.
-    
-    Important: Respond *only* with the raw JSON object.
+    """<|system|>
+    Best source?
+    Context: {context}
+    Respond JSON: {{ "source": "...", "reasoning": "..." }}
     <|end|>
     <|user|>
-    Context From Research:
-    {context}
-    
-    Required Analysis: "{analysis_required}"
+    Analysis: "{analysis_required}"
     JSON:
     <|end|>
     <|assistant|>

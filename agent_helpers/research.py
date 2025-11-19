@@ -1,85 +1,71 @@
-from agent_helpers.strat import parse_json_from_string
 from langchain_core.output_parsers import StrOutputParser
 from .prompts import classifier_prompt, analysis_prompt, source_prompt
-from agent_helpers.tools import VectorStore, simulated_web_search
-from agent_helpers.types import AgentState, Analysis, WorkItem # Import types from main
-from agent_helpers.functions import print_tree 
+from agent_helpers.tools import VectorStore, web_search # Imports
+from agent_helpers.types import AgentState, Analysis, WorkItem, print_tree
 
-
-# --- Custom JSON Parser (copied from old file) ---
 import json
 import re
 
-
-# --- Research Agent ---
+def parse_json_from_string(text: str) -> dict:
+    # (Use the robust parser from previous steps)
+    markdown_match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if markdown_match:
+        try: return json.loads(markdown_match.group(1))
+        except: pass 
+    matches = list(re.finditer(r"\{.*\}", text, re.DOTALL))
+    if matches:
+        for match in reversed(matches):
+            try: return json.loads(match.group(0))
+            except: continue
+    return {"error": "Failed to parse JSON", "raw_text": text}
 
 class ResearchAgent:
-    def __init__(self, llm, vector_store, web_search_tool):
+    # CHANGE: Update __init__ signature
+    def __init__(self, llm, vector_store, web_search_tool, python_tool, chart_tool):
         self.llm = llm
         self.vector_store = vector_store
         self.web_search_tool = web_search_tool
-        print("Research Agent (Analyst) initialized.")
+        self.python_tool = python_tool # Store Python Tool
+        self.chart_tool = chart_tool   # Store Chart Tool
+        print("Research Agent (Analyst) initialized with Python & Charting capabilities.")
 
     def get_llm_chain(self, prompt_template):
-        """Helper to create a chain for this agent."""
         return prompt_template | self.llm | StrOutputParser() | parse_json_from_string
 
     def gather_context(self, query: str) -> str:
-        """
-        Gathers context from all available tools (RAG, Web)
-        """
-        print(f"[ResearchAgent] Gathering context for query: '{query[:50]}...'")
+        if not isinstance(query, str): query = str(query)
+        print(f"   [ResearchAgent] Gathering context for: '{query[:40]}...'")
         
-        # 1. Search the agent's memory (Vector Store)
         memory_results = self.vector_store.search(query)
-        
-        # 2. Search the web
         web_results = self.web_search_tool(query)
         
         context = f"""
-        --- Context from Agent Memory (Learnings & Docs) ---
+        --- Context from Agent Memory ---
         {memory_results}
-        
         --- Context from Live Web Search ---
         {web_results}
         """
         return context
 
     def classify_hypothesis(self, state: AgentState) -> dict:
-        """Classifies a hypothesis as 'leaf' or 'branch' using RAG."""
-        print("\n--- Executing Node: classify_hypothesis (ResearchAgent) ---")
-        
+        # (Same logic as before)
         item_to_process = state["nodes_to_process"][0]
-        remaining_nodes_to_process = state["nodes_to_process"][1:]
+        remaining_nodes = state["nodes_to_process"][1:]
         node_id = item_to_process["id"]
-        
         node = next(h for h in state["hypothesis_tree"] if h["id"] == node_id)
-        node_text = node["text"]
         
-        # --- Tool Use ---
-        context = self.gather_context(node_text)
-        # ---
+        print(f"\n--- Executing Node: classify_hypothesis for {node_id} ---")
+        context = self.gather_context(node["text"])
         
         chain = self.get_llm_chain(classifier_prompt)
-        
-        print(f"... Analyst is reasoning (LLM Call for {node_id}) ...")
-        response = chain.invoke({"hypothesis_text": node_text, "context": context})
+        response = chain.invoke({"hypothesis_text": node["text"], "context": context})
         
         if "error" in response:
-            log_entry = f"Error classifying hypothesis {node_id}: {response.get('raw_text', 'Unknown error')}"
-            print(log_entry)
-            return {
-                "nodes_to_process": remaining_nodes_to_process,
-                "explainability_log": [log_entry]
-            }
+            return {"nodes_to_process": remaining_nodes}
 
         classification = response.get("classification", "branch")
-        reasoning = response.get("reasoning", "No reasoning provided")
-        
-        log_entry = f"Classified hypothesis ({node_id}) '{node_text}' as '{classification}'. Reasoning: {reasoning}"
         
         new_work_item = None
-        
         if classification == "leaf":
             node["is_leaf"] = True
             new_work_item = WorkItem(id=node_id, action="analyze")
@@ -87,91 +73,53 @@ class ResearchAgent:
             new_work_item = WorkItem(id=node_id, action="breakdown")
             
         updated_tree = [h if h["id"] != node_id else node for h in state["hypothesis_tree"]]
-        
-        new_nodes_to_process = remaining_nodes_to_process
-        if new_work_item:
-            new_nodes_to_process = remaining_nodes_to_process + [new_work_item]
+        # Add to end (BFS)
+        new_nodes_to_process = remaining_nodes + ([new_work_item] if new_work_item else [])
             
-        # This is the item to be reviewed by the user
-        state["last_completed_item_id"] = node_id
+        print_tree(updated_tree, title="UPDATED CLASSIFICATION")
         
-        updated_tree = [h if h["id"] != node_id else node for h in state["hypothesis_tree"]]
-
-# Call the new print function
-        print_tree(updated_tree, title="HYPOTHESIS TREE - UPDATED CLASSIFICATION")
-
         return {
             "hypothesis_tree": updated_tree,
             "nodes_to_process": new_nodes_to_process,
-            "explainability_log": [log_entry],
             "last_completed_item_id": node_id
         }
 
     def identify_analysis(self, state: AgentState) -> dict:
-        """Identifies the analysis and data source needed for a leaf node."""
-        print("\n--- Executing Node: identify_analysis (ResearchAgent) ---")
-        
+        # (Same logic as before)
         item_to_process = state["nodes_to_process"][0]
-        remaining_nodes_to_process = state["nodes_to_process"][1:]
+        remaining_nodes = state["nodes_to_process"][1:]
         node_id = item_to_process["id"]
-        
         node = next(h for h in state["hypothesis_tree"] if h["id"] == node_id)
-        node_text = node["text"]
         
-        # --- Tool Use (Step 1: Analysis) ---
-        context = self.gather_context(node_text)
-        # ---
+        print(f"\n--- Executing Node: identify_analysis for {node_id} ---")
+        context = self.gather_context(node["text"])
         
         analysis_chain = self.get_llm_chain(analysis_prompt)
-        
-        print(f"... Analyst is reasoning (LLM Call for analysis of {node_id}) ...")
-        analysis_response = analysis_chain.invoke({"hypothesis_text": node_text, "context": context})
+        analysis_response = analysis_chain.invoke({"hypothesis_text": node["text"], "context": context})
         
         if "error" in analysis_response:
-            log_entry = f"Error identifying analysis for {node_id}: {analysis_response.get('raw_text', 'Unknown error')}"
-            print(log_entry)
-            return {
-                "nodes_to_process": remaining_nodes_to_process,
-                "explainability_log": [log_entry]
-            }
+            return {"nodes_to_process": remaining_nodes}
 
         analysis_required = analysis_response.get("analysis_required", "No analysis identified")
-        analysis_reasoning = analysis_response.get("reasoning", "No reasoning provided")
-        log_entry = f"Identified analysis for leaf ({node_id}): '{analysis_required}'. Reasoning: {analysis_reasoning}"
         
-        # --- Tool Use (Step 2: Source) ---
-        # We re-gather context, this time for the *analysis*
-        source_context = self.gather_context(analysis_required)
-        # ---
-        
+        # FUTURE TODO: Here you could check 'analysis_required' and if it involves
+        # specific math, call self.python_tool(analysis_required)
+
         source_chain = self.get_llm_chain(source_prompt)
-        print(f"... Analyst is reasoning (LLM Call for source of {node_id}) ...")
-        source_response = source_chain.invoke({"analysis_required": analysis_required, "context": source_context})
+        source_response = source_chain.invoke({"analysis_required": analysis_required, "context": context})
         
-        if "error" in source_response:
-            log_entry += f"\n  - Error identifying source: {source_response.get('raw_text', 'Unknown error')}"
-            print(log_entry)
-            # Continue, but with a partial analysis
-            source_of_reference = "Error: No source identified"
-            source_reasoning = source_response.get('raw_text', 'Unknown error')
-        else:
-            source_of_reference = source_response.get("source", "No source identified")
-            source_reasoning = source_response.get("reasoning", "No reasoning provided")
-            log_entry += f"\n  - Identified source for analysis: '{source_of_reference}'. Reasoning: {source_reasoning}"
+        source = source_response.get("source", "No source")
         
         new_analysis = Analysis(
             hypothesis_id=node_id,
             analysis_required=analysis_required,
-            analysis_reasoning=analysis_reasoning,
-            source_of_reference=source_of_reference,
-            source_reasoning=source_reasoning
+            analysis_reasoning=analysis_response.get("reasoning", ""),
+            source_of_reference=source,
+            source_reasoning=source_response.get("reasoning", "")
         )
-        
-        # This is the item to be reviewed by the user
-        state["last_completed_item_id"] = node_id
         
         return {
             "analyses_needed": state["analyses_needed"] + [new_analysis],
-            "nodes_to_process": remaining_nodes_to_process,
-            "explainability_log": [log_entry]
+            "nodes_to_process": remaining_nodes,
+            "last_completed_item_id": node_id
         }

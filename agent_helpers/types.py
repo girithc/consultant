@@ -24,18 +24,44 @@ class WorkItem(TypedDict):
 class AgentState(TypedDict):
     """The central state of the graph."""
     problem_statement: str
-    
-    # The tree is a flat list of Hypothesis nodes
     hypothesis_tree: List[Hypothesis]
-    
-    # This is the "to-do" list
     nodes_to_process: List[WorkItem]
-    
-    # This tracks the last *completed* item, so the user can review it
     last_completed_item_id: Optional[str]
-    
-    # Final output
     analyses_needed: List[Analysis]
-    
-    # XAI Log
     explainability_log: List[str]
+    
+def print_tree(tree: List[Hypothesis], title="CURRENT HYPOTHESIS TREE"):
+    """Prints the hypothesis tree structure to the console."""
+    print("\n" + "="*50)
+    print(f"| {title.upper()}")
+    print("="*50)
+    
+    # Helper to print a single node and its children recursively
+    def print_node(node_id, indent=""):
+        node = next((h for h in tree if h["id"] == node_id), None)
+        if not node: return
+        
+        leaf_marker = " (LEAF)" if node.get("is_leaf", False) else ""
+        
+        # Print the node
+        print(f"{indent}* ({node['id']}){leaf_marker}: {node['text']}")
+        # print(f"{indent}  [Reasoning]: {node['reasoning'][:100]}...") # Optional: Uncomment for more detail
+        
+        # Find children and print them
+        children = [h for h in tree if h.get("parent_id") == node_id]
+        # Sort children to keep 1.1 before 1.2
+        children.sort(key=lambda x: x["id"])
+        
+        for child in children:
+            print_node(child["id"], indent + "  ")
+    
+    # FIX: Find ALL roots (nodes with parent_id="0"), not just "1"
+    roots = [h for h in tree if h["parent_id"] == "0"]
+    roots.sort(key=lambda x: x["id"]) # Ensure 1 prints before 2
+    
+    if roots:
+        for root in roots:
+            print_node(root["id"])
+    else:
+        print("Tree is empty.")
+    print("="*50)
