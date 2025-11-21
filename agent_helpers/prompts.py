@@ -41,10 +41,9 @@ breakdown_prompt = ChatPromptTemplate.from_template(
     Respond in JSON format:
     {{
         "sub_hypotheses": [
-            {{ "text": "Sub-hypothesis A..." }},
-            {{ "text": "Sub-hypothesis B..." }}
-        ],
-        "reasoning": "Why these drivers?"
+            {{ "text": "Sub-hypothesis A...", "reasoning": "Specific reasoning for A (mutually exclusive from B)..." }},
+            {{ "text": "Sub-hypothesis B...", "reasoning": "Specific reasoning for B (mutually exclusive from A)..." }}
+        ]
     }}
     <|end|>
     <|user|>

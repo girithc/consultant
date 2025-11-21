@@ -10,3 +10,7 @@ matplotlib
 langchain-tavily
 uvicorn
 fastapi
+azure-cosmos
+PyPDF2
+python-docx
+langchain-text-splitters

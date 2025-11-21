@@ -53,6 +53,8 @@ class VectorStore:
 # ==========================================
 # TOOL 2: Web Search (Fixed)
 # ==========================================
+from agent_helpers.cosmos_db import CosmosDB
+
 def web_search(query: str) -> str:
     """Executes a real web search."""
     if "TAVILY_API_KEY" not in os.environ:
@@ -79,7 +81,13 @@ def web_search(query: str) -> str:
                 context += f"\n[Source: {url}]\n{content[:300]}...\n"
             else:
                 context += f"\n[Result] {str(res)}\n"
-                
+        
+        # Log to Cosmos DB
+        try:
+            CosmosDB().log_search(query, results if isinstance(results, list) else [{"raw": str(results)}])
+        except Exception as log_err:
+            print(f"   [WebSearch] Logging failed: {log_err}")
+
         return context
 
     except Exception as e:

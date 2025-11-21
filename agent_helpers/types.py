@@ -1,12 +1,15 @@
 from typing import TypedDict, List, Dict, Any, Optional
 
 class Hypothesis(TypedDict):
-    """Represents a single node in the hypothesis tree."""
     id: str
-    parent_id: str
     text: str
     reasoning: str
+    status: str  # "pending", "accepted", "rejected"
+    parent_id: Optional[str]
+    children_ids: List[str]
     is_leaf: bool
+    depth: int
+    tools_used: List[str]  # e.g., ["Web Search", "RAG", "Python"]
 
 class Analysis(TypedDict):
     """Represents the analysis required for a leaf hypothesis."""
@@ -29,6 +32,9 @@ class AgentState(TypedDict):
     last_completed_item_id: Optional[str]
     analyses_needed: List[Analysis]
     explainability_log: List[str]
+    existing_tree: Optional[List[Hypothesis]]
+    restart_node_id: Optional[str]
+    scratchpad_id: Optional[str]
     
 def print_tree(tree: List[Hypothesis], title="CURRENT HYPOTHESIS TREE"):
     """Prints the hypothesis tree structure to the console."""

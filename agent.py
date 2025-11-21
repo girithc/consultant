@@ -14,6 +14,8 @@ import uvicorn
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from agent_helpers.cosmos_db import CosmosDB
 
 # --- Local Imports ---
 from agent_helpers.tools import VectorStore, web_search, run_python_analysis, generate_chart
@@ -100,6 +102,66 @@ if llm:
 
 def start_process(state: AgentState) -> dict:
     problem = state["problem_statement"]
+    existing_tree = state.get("existing_tree")
+    restart_node_id = state.get("restart_node_id")
+    
+    if existing_tree and restart_node_id:
+        print(f"--- Restarting from node {restart_node_id} ---")
+        
+        # 1. Find the node to restart
+        restart_node = next((n for n in existing_tree if n["id"] == restart_node_id), None)
+        if not restart_node:
+            print(f"Warning: Restart node {restart_node_id} not found. Starting fresh.")
+            return {
+                "hypothesis_tree": [],
+                "analyses_needed": [],
+                "nodes_to_process": [],
+                "explainability_log": [f"Restart failed: Node not found. Starting fresh: {problem}"],
+                "last_completed_item_id": None
+            }
+            
+        # 2. Prune descendants
+        # Simple BFS to find all descendants
+        nodes_to_keep = [n for n in existing_tree if n["id"] != restart_node_id]
+        descendants = set()
+        queue = [restart_node_id]
+        
+        while queue:
+            current = queue.pop(0)
+            children = [n["id"] for n in existing_tree if n["parent_id"] == current]
+            for child in children:
+                descendants.add(child)
+                queue.append(child)
+        
+        nodes_to_keep = [n for n in nodes_to_keep if n["id"] not in descendants]
+        
+        # 3. Reset the restart node's state
+        restart_node["is_leaf"] = False
+        # Add it back to the tree
+        nodes_to_keep.append(restart_node)
+        
+        # 4. Create work item for this node
+        # If it's root (id="1", "2"), it needs breakdown. If it was a leaf, it needs analyze?
+        # Actually, if we edit text, we probably want to re-breakdown or re-classify.
+        # Let's assume we want to breakdown again.
+        action = "breakdown"
+        if restart_node["parent_id"] == "0":
+             # Roots are usually broken down
+             action = "breakdown"
+        else:
+             # Mid-tree nodes are also broken down
+             action = "breakdown"
+             
+        new_work_item = WorkItem(id=restart_node_id, action=action)
+        
+        return {
+            "hypothesis_tree": nodes_to_keep,
+            "analyses_needed": [],
+            "nodes_to_process": [new_work_item],
+            "explainability_log": [f"Restarting analysis from node {restart_node_id}: {restart_node['text'][:30]}..."],
+            "last_completed_item_id": None
+        }
+
     return {
         "hypothesis_tree": [],
         "analyses_needed": [],
@@ -116,9 +178,45 @@ def compile_report(state: AgentState):
     # In API mode, this data is already sent via stream, but we keep it for graph correctness
     return {}
 
+def ensure_completion(state: AgentState) -> dict:
+    """
+    Safety net: Scans the tree for any non-leaf nodes that have no children
+    and are not in the process queue. Adds them to the queue if found.
+    """
+    tree = state.get("hypothesis_tree", [])
+    queue = state.get("nodes_to_process", [])
+    queue_ids = {item["id"] for item in queue}
+    
+    new_work_items = []
+    
+    for node in tree:
+        # Condition: Not a leaf, has no children, and not currently queued
+        # Also check that children_ids is empty (not just missing)
+        if not node["is_leaf"] and len(node.get("children_ids", [])) == 0 and node["id"] not in queue_ids:
+            print(f"[Safety] Found orphaned node {node['id']}. Re-queueing.")
+            
+            # Determine action based on depth
+            depth = len(node["id"].split('.'))
+            
+            action = "breakdown"
+            if depth >= 2:
+                action = "classify"
+                
+            new_work_items.append(WorkItem(id=node["id"], action=action))
+            queue_ids.add(node["id"]) # Prevent duplicates in this pass
+            
+    if new_work_items:
+        return {
+            "nodes_to_process": new_work_items,
+            "explainability_log": [f"Safety net: Re-queued {len(new_work_items)} orphaned nodes."]
+        }
+        
+    # If no new work items, we're truly done
+    return {}
+
 def route_action(state: AgentState) -> str:
     if not state["nodes_to_process"]:
-        return "wait_for_approval"
+        return "ensure_completion"
 
     next_item = state["nodes_to_process"][0]
     next_action = next_item["action"]
@@ -127,8 +225,25 @@ def route_action(state: AgentState) -> str:
         return "breakdown_hypothesis"
     elif next_action == "classify":
         return "classify_hypothesis"
-    elif next_action == "analyze":
-        return "identify_analysis"
+    
+    return "ensure_completion"
+
+def check_queue_after_ensure(state: AgentState) -> str:
+    """Check if there's work to do after ensure_completion runs"""
+    queue = state.get("nodes_to_process", [])
+    
+    if not queue:
+        # No work in queue - we're done
+        return "wait_for_approval"
+    
+    # There's work, route it
+    next_item = queue[0]
+    next_action = next_item["action"]
+    
+    if next_action == "breakdown":
+        return "breakdown_hypothesis"
+    elif next_action == "classify":
+        return "classify_hypothesis"
     
     return "wait_for_approval"
 
@@ -142,7 +257,7 @@ def build_graph():
     workflow.add_node("formulate_top_hypothesis", agents["strategist"].formulate_top_hypothesis)
     workflow.add_node("breakdown_hypothesis", agents["strategist"].breakdown_hypothesis)
     workflow.add_node("classify_hypothesis", agents["researcher"].classify_hypothesis)
-    workflow.add_node("identify_analysis", agents["researcher"].identify_analysis)
+    workflow.add_node("ensure_completion", ensure_completion)
     workflow.add_node("wait_for_approval", wait_for_approval)
     workflow.add_node("compile_report", compile_report)
 
@@ -153,14 +268,21 @@ def build_graph():
     destinations = {
         "breakdown_hypothesis": "breakdown_hypothesis", 
         "classify_hypothesis": "classify_hypothesis", 
-        "identify_analysis": "identify_analysis", 
-        "wait_for_approval": "wait_for_approval"
+        "ensure_completion": "ensure_completion"
     }
     
     workflow.add_conditional_edges("formulate_top_hypothesis", route_action, destinations)
     workflow.add_conditional_edges("breakdown_hypothesis", route_action, destinations)
     workflow.add_conditional_edges("classify_hypothesis", route_action, destinations)
-    workflow.add_conditional_edges("identify_analysis", route_action, destinations)
+
+    # Edge from ensure_completion
+    ensure_destinations = {
+        "breakdown_hypothesis": "breakdown_hypothesis", 
+        "classify_hypothesis": "classify_hypothesis", 
+        "ensure_completion": "ensure_completion", # Should not happen if logic is correct, but safe
+        "wait_for_approval": "wait_for_approval"
+    }
+    workflow.add_conditional_edges("ensure_completion", check_queue_after_ensure, ensure_destinations)
 
     workflow.add_edge("wait_for_approval", "compile_report")
     workflow.add_edge("compile_report", END)
@@ -189,12 +311,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def real_agent_generator(problem: str):
+class AgentInput(BaseModel):
+    problem_statement: str
+    scratchpad_id: str = None
+    existing_tree: list = None
+    restart_node_id: str = None
+
+async def real_agent_generator(input_data: AgentInput):
     if not agent_app:
         yield json.dumps({"explainability_log": ["Error: Agent not initialized (Check API Keys)."]}) + "\n"
         return
 
-    inputs = {"problem_statement": problem}
+    inputs = {
+        "problem_statement": input_data.problem_statement,
+        "scratchpad_id": input_data.scratchpad_id,
+        "existing_tree": input_data.existing_tree,
+        "restart_node_id": input_data.restart_node_id
+    }
 
     try:
         async for output in agent_app.astream(inputs, config={"recursion_limit": 50}):
@@ -235,19 +368,117 @@ async def real_agent_generator(problem: str):
             "activity": {"node": "error", "item_id": None, "status": "done"}
         }) + "\n"
 
+# ============================================================
+# AUTH & SCRATCHPAD ENDPOINTS
+# ============================================================
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class ScratchpadRequest(BaseModel):
+    user_id: str
+    title: str
+
+@app.post("/auth/register")
+async def register(req: LoginRequest):
+    user = CosmosDB().create_user(req.username, req.password)
+    if not user:
+        raise HTTPException(status_code=400, detail="User already exists")
+    return user
+
+@app.post("/auth/login")
+async def login(req: LoginRequest):
+    user = CosmosDB().get_user(req.username, req.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return user
+
+@app.get("/scratchpads/{user_id}")
+async def get_scratchpads(user_id: str):
+    return CosmosDB().get_scratchpads(user_id)
+
+@app.post("/scratchpads")
+async def create_scratchpad(req: ScratchpadRequest):
+    return CosmosDB().create_scratchpad(req.user_id, req.title)
+
+# ============================================================
+# DOCUMENT ENDPOINTS
+# ============================================================
+
+@app.post("/scratchpads/{scratchpad_id}/documents")
+async def upload_document(scratchpad_id: str, request: Request):
+    """
+    Upload a document to a scratchpad
+    Expects: {"filename": "...", "content": "base64_encoded_bytes"}
+    """
+    from agent_helpers.document_processor import process_file
+    import base64
+    
+    try:
+        body = await request.json()
+        filename = body.get("filename")
+        content_b64 = body.get("content")
+        
+        if not filename or not content_b64:
+            raise HTTPException(status_code=400, detail="Missing filename or content")
+        
+        # Decode base64 content
+        file_bytes = base64.b64decode(content_b64)
+        
+        # Process document
+        processed = process_file(file_bytes, filename)
+        
+        # Save document metadata and text
+        doc = CosmosDB().save_document(
+            scratchpad_id=scratchpad_id,
+            filename=filename,
+            text=processed.text,
+            metadata=processed.metadata
+        )
+        
+        if not doc:
+            raise HTTPException(status_code=500, detail="Failed to save document")
+        
+        # Save vectorized chunks
+        CosmosDB().save_document_chunks(
+            scratchpad_id=scratchpad_id,
+            document_id=doc["id"],
+            filename=filename,
+            chunks=processed.chunks
+        )
+        
+        return {"success": True, "document": doc}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"Document upload error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/scratchpads/{scratchpad_id}/documents")
+async def list_documents(scratchpad_id: str):
+    """Get all documents for a scratchpad"""
+    return CosmosDB().get_documents(scratchpad_id)
+
+@app.delete("/documents/{document_id}")
+async def delete_document(document_id: str):
+    """Delete a document"""
+    success = CosmosDB().delete_document(document_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete document")
+    return {"success": True}
+
 @app.post("/run_agent")
-async def run_agent(request: Request):
+async def run_agent(input_data: AgentInput):
     """
     Production Endpoint: Triggers the real AI Agent.
     """
-    body = await request.json()
-    problem = body.get("problem_statement", "")
-    
-    if not problem:
-        raise HTTPException(status_code=400, detail="Problem statement is required")
+    print(f"\n[Server] Received Request: {input_data.problem_statement[:50]}... (Pad: {input_data.scratchpad_id})")
+    if input_data.restart_node_id:
+        print(f"[Server] Restarting from node: {input_data.restart_node_id}")
         
-    print(f"\n[Server] Received Request: {problem}")
-    return StreamingResponse(real_agent_generator(problem), media_type="application/x-ndjson")
+    return StreamingResponse(real_agent_generator(input_data), media_type="application/x-ndjson")
 
 # ============================================================
 # MAIN EXECUTION

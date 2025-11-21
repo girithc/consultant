@@ -2,6 +2,7 @@ from langchain_core.output_parsers import StrOutputParser
 from .prompts import top_hypothesis_prompt, breakdown_prompt
 from .types import AgentState, Hypothesis, WorkItem 
 from agent_helpers.types import print_tree 
+from agent_helpers.cosmos_db import CosmosDB 
 import json
 import re
 
@@ -35,6 +36,15 @@ class StrategistAgent:
         print(f"   [Strategist] Researching problem context: '{problem[:30]}...'")
         context = self.web_search(problem)
         
+        # RAG Integration
+        scratchpad_id = state.get("scratchpad_id")
+        if scratchpad_id:
+            print(f"   [Strategist] Searching documents for scratchpad: {scratchpad_id}")
+            doc_context = CosmosDB().search_documents(scratchpad_id, problem)
+            if doc_context:
+                print(f"   [Strategist] Found relevant document context.")
+                context += f"\n\n[INTERNAL DOCUMENTS]:\n{doc_context}"
+        
         # 2. THEN FORMULATE
         chain = self.get_llm_chain(top_hypothesis_prompt)
         response = chain.invoke({"problem": problem, "context": context})
@@ -52,12 +62,22 @@ class StrategistAgent:
                 parent_id="0", 
                 text=h_data.get("text", "No text"), 
                 reasoning=h_data.get("reasoning", ""), 
-                is_leaf=False
+                is_leaf=False,
+                children_ids=[],
+                tools_used=["Web Search"] + (["RAG"] if scratchpad_id else [])
             ))
             new_work_items.append(WorkItem(id=node_id, action="breakdown"))
 
         print_tree(new_nodes, title="INITIAL HYPOTHESES (DATA-DRIVEN)")
         
+        # Log to Cosmos DB
+        try:
+            CosmosDB().log_interaction("StrategistAgent.formulate_top_hypothesis", 
+                                     {"problem": problem, "context": context}, 
+                                     response)
+        except Exception as e:
+            print(f"   [Strategist] Logging failed: {e}")
+
         return {
             "hypothesis_tree": new_nodes,
             "nodes_to_process": new_work_items,
@@ -76,6 +96,15 @@ class StrategistAgent:
         print(f"   [Strategist] Researching context for: '{parent_node['text'][:40]}...'")
         context = self.web_search(parent_node["text"])
         
+        # RAG Integration
+        scratchpad_id = state.get("scratchpad_id")
+        if scratchpad_id:
+            print(f"   [Strategist] Searching documents for scratchpad: {scratchpad_id}")
+            doc_context = CosmosDB().search_documents(scratchpad_id, parent_node["text"])
+            if doc_context:
+                print(f"   [Strategist] Found relevant document context.")
+                context += f"\n\n[INTERNAL DOCUMENTS]:\n{doc_context}"
+        
         # 2. THEN BREAKDOWN
         chain = self.get_llm_chain(breakdown_prompt)
         response = chain.invoke({"hypothesis_text": parent_node["text"], "context": context})
@@ -84,6 +113,22 @@ class StrategistAgent:
             return {"nodes_to_process": remaining_nodes}
 
         sub_hypotheses = response.get("sub_hypotheses", [])[:2]
+        
+        # FIX: If no sub-hypotheses, mark as leaf instead of dead end
+        if not sub_hypotheses:
+            print(f"   [Strategist] No sub-hypotheses found for {parent_id}. Marking as leaf.")
+            parent_node["is_leaf"] = True
+            # We need to analyze this node now since it's a leaf
+            new_work_item = WorkItem(id=parent_id, action="analyze")
+            
+            updated_tree = [h if h["id"] != parent_id else parent_node for h in state["hypothesis_tree"]]
+            new_nodes_to_process = remaining_nodes + [new_work_item]
+            
+            return {
+                "hypothesis_tree": updated_tree,
+                "nodes_to_process": new_nodes_to_process,
+                "explainability_log": [f"No further breakdown possible. Marked as leaf."]
+            }
         
         new_nodes = []
         new_work_items = []
@@ -100,13 +145,29 @@ class StrategistAgent:
                 id=child_id,
                 parent_id=parent_id,
                 text=sub.get("text", "No text"),
-                reasoning=response.get("reasoning", ""),
-                is_leaf=False
+                reasoning=sub.get("reasoning", ""), # Use per-child reasoning
+                is_leaf=False,
+                children_ids=[],
+                tools_used=["Web Search"] + (["RAG"] if scratchpad_id else [])
             ))
             new_work_items.append(WorkItem(id=child_id, action=next_action))
             
-        updated_tree = state["hypothesis_tree"] + new_nodes
+            new_work_items.append(WorkItem(id=child_id, action=next_action))
+            
+        # UPDATE PARENT'S CHILDREN_IDS
+        parent_node["children_ids"] = [n["id"] for n in new_nodes]
+        
+        # Update the tree: replace parent, add new nodes
+        updated_tree = [h if h["id"] != parent_id else parent_node for h in state["hypothesis_tree"]] + new_nodes
         print_tree(updated_tree, title=f"BREAKDOWN OF {parent_id}")
+
+        # Log to Cosmos DB
+        try:
+            CosmosDB().log_interaction("StrategistAgent.breakdown_hypothesis", 
+                                     {"parent_hypothesis": parent_node["text"], "context": context}, 
+                                     response)
+        except Exception as e:
+            print(f"   [Strategist] Logging failed: {e}")
 
         return {
             "hypothesis_tree": updated_tree,
