@@ -18,12 +18,10 @@ class CosmosDB:
         self.endpoint = os.environ.get("AZURE_COSMOS_ENDPOINT")
         self.key = os.environ.get("AZURE_COSMOS_KEY")
         self.database_name = "AgentKnowledgeDB"
-        self.container_name = "Interactions" # Stores Users, Scratchpads, Interactions
-        self.knowledge_container_name = "Knowledge" # Stores Vectorized Data
+        self.container_name = "UnifiedData" # Stores all data types with vector support
         
         self.client = None
         self.container = None
-        self.knowledge_container = None
         self.enabled = False
         self.embeddings = None
 
@@ -32,15 +30,8 @@ class CosmosDB:
                 self.client = CosmosClient(self.endpoint, self.key)
                 self.database = self.client.create_database_if_not_exists(id=self.database_name)
                 
-                # Main container for structured data
-                self.container = self.database.create_container_if_not_exists(
-                    id=self.container_name,
-                    partition_key=PartitionKey(path="/type"),
-                    offer_throughput=400
-                )
-                
-                # Knowledge container for vectors with Vector Search Policy
-                # This ensures the container is created with the correct settings for vector search
+                # Unified container with vector search support
+                # Stores all data types: users, scratchpads, interactions, knowledge, documents, chunks
                 # NOTE: Reduced dimensions to 256 to fit within Cosmos DB Free Tier / Serverless limits (max 505)
                 # text-embedding-3-small supports dimension reduction via API
                 vector_embedding_policy = {
@@ -62,8 +53,8 @@ class CosmosDB:
                     "vectorIndexes": [{"path": "/vector", "type": "flat"}]
                 }
 
-                self.knowledge_container = self.database.create_container_if_not_exists(
-                    id=self.knowledge_container_name,
+                self.container = self.database.create_container_if_not_exists(
+                    id=self.container_name,
                     partition_key=PartitionKey(path="/type"),
                     offer_throughput=400,
                     vector_embedding_policy=vector_embedding_policy,
@@ -73,7 +64,7 @@ class CosmosDB:
                 self.enabled = True
                 # Initialize embeddings with reduced dimensions
                 self.embeddings = OpenAIEmbeddings(model="text-embedding-3-small", dimensions=256)
-                print(f"[CosmosDB] Connected to {self.database_name}")
+                print(f"[CosmosDB] Connected to {self.database_name} with unified container")
             except Exception as e:
                 print(f"[CosmosDB] Connection failed: {e}")
         else:
@@ -205,7 +196,7 @@ class CosmosDB:
                 "metadata": metadata,
                 "timestamp": datetime.datetime.utcnow().isoformat()
             }
-            self.knowledge_container.create_item(body=item)
+            self.container.create_item(body=item)
             print(f"[CosmosDB] Saved knowledge vector.")
         except Exception as e:
             print(f"[CosmosDB] Error saving knowledge: {e}")
@@ -304,10 +295,10 @@ class CosmosDB:
             # Delete all chunks for this document
             chunk_query = "SELECT c.id FROM c WHERE c.type = 'document_chunk' AND c.document_id = @doc_id"
             params = [{"name": "@doc_id", "value": document_id}]
-            chunks = list(self.knowledge_container.query_items(query=chunk_query, parameters=params, enable_cross_partition_query=True))
+            chunks = list(self.container.query_items(query=chunk_query, parameters=params, enable_cross_partition_query=True))
             
             for chunk in chunks:
-                self.knowledge_container.delete_item(item=chunk["id"], partition_key="document_chunk")
+                self.container.delete_item(item=chunk["id"], partition_key="document_chunk")
             
             print(f"[CosmosDB] Deleted document and {len(chunks)} chunks")
             return True
@@ -337,7 +328,7 @@ class CosmosDB:
                     "timestamp": datetime.datetime.utcnow().isoformat()
                 }
                 
-                self.knowledge_container.create_item(body=chunk_item)
+                self.container.create_item(body=chunk_item)
             
             print(f"[CosmosDB] Saved {len(chunks)} vectorized chunks for {filename}")
         except Exception as e:
@@ -373,7 +364,7 @@ class CosmosDB:
             ]
             
             try:
-                results = list(self.knowledge_container.query_items(query=sql, parameters=params, enable_cross_partition_query=True))
+                results = list(self.container.query_items(query=sql, parameters=params, enable_cross_partition_query=True))
                 return results
             except Exception as vec_err:
                 print(f"[CosmosDB] Vector search failed (likely missing index policy). Falling back to recent items. Error: {vec_err}")
@@ -385,7 +376,7 @@ class CosmosDB:
                 ORDER BY c.timestamp DESC
                 """
                 params_fallback = [{"name": "@scratchpad_id", "value": scratchpad_id}]
-                return list(self.knowledge_container.query_items(query=sql_fallback, parameters=params_fallback, enable_cross_partition_query=True))
+                return list(self.container.query_items(query=sql_fallback, parameters=params_fallback, enable_cross_partition_query=True))
             
         except Exception as e:
             print(f"[CosmosDB] Document search error: {e}")
