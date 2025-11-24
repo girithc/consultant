@@ -381,3 +381,54 @@ class CosmosDB:
         except Exception as e:
             print(f"[CosmosDB] Document search error: {e}")
             return []
+
+    # --- HYPOTHESIS TREE PERSISTENCE ---
+    def save_tree_state(self, scratchpad_id: str, hypothesis_tree: list):
+        """Save the current hypothesis tree state for a scratchpad"""
+        if not self.enabled:
+            print(f"[CosmosDB Mock] Would save tree with {len(hypothesis_tree)} nodes for scratchpad {scratchpad_id}")
+            return
+        
+        try:
+            # First, delete any existing tree for this scratchpad
+            query = "SELECT c.id FROM c WHERE c.type = 'hypothesis_tree' AND c.scratchpad_id = @scratchpad_id"
+            params = [{"name": "@scratchpad_id", "value": scratchpad_id}]
+            existing = list(self.container.query_items(query=query, parameters=params, enable_cross_partition_query=True))
+            
+            for item in existing:
+                self.container.delete_item(item=item["id"], partition_key="hypothesis_tree")
+            
+            # Save new tree state
+            tree_item = {
+                "id": str(uuid.uuid4()),
+                "type": "hypothesis_tree",
+                "scratchpad_id": scratchpad_id,
+                "tree": hypothesis_tree,
+                "timestamp": datetime.datetime.utcnow().isoformat()
+            }
+            
+            self.container.create_item(body=tree_item)
+            print(f"[CosmosDB] Saved hypothesis tree with {len(hypothesis_tree)} nodes")
+        except Exception as e:
+            print(f"[CosmosDB] Error saving tree state: {e}")
+    
+    def load_tree_state(self, scratchpad_id: str):
+        """Load the hypothesis tree state for a scratchpad"""
+        if not self.enabled:
+            print(f"[CosmosDB Mock] Would load tree for scratchpad {scratchpad_id}")
+            return []
+        
+        try:
+            query = "SELECT * FROM c WHERE c.type = 'hypothesis_tree' AND c.scratchpad_id = @scratchpad_id ORDER BY c.timestamp DESC"
+            params = [{"name": "@scratchpad_id", "value": scratchpad_id}]
+            items = list(self.container.query_items(query=query, parameters=params, enable_cross_partition_query=True))
+            
+            if items:
+                print(f"[CosmosDB] Loaded hypothesis tree with {len(items[0].get('tree', []))} nodes")
+                return items[0].get("tree", [])
+            else:
+                print(f"[CosmosDB] No saved tree found for scratchpad {scratchpad_id}")
+                return []
+        except Exception as e:
+            print(f"[CosmosDB] Error loading tree state: {e}")
+            return []

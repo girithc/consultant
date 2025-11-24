@@ -35,6 +35,8 @@ class AgentState(TypedDict):
     existing_tree: Optional[List[Hypothesis]]
     restart_node_id: Optional[str]
     scratchpad_id: Optional[str]
+    root_id_offset: int
+    parent_node_id: Optional[str]
     
 def print_tree(tree: List[Hypothesis], title="CURRENT HYPOTHESIS TREE"):
     """Prints the hypothesis tree structure to the console."""

@@ -6,6 +6,7 @@ from agent_helpers.cosmos_db import CosmosDB
 
 import json
 import re
+from dataclasses import asdict, is_dataclass
 
 def parse_json_from_string(text: str) -> dict:
     # (Use the robust parser from previous steps)
@@ -21,14 +22,13 @@ def parse_json_from_string(text: str) -> dict:
     return {"error": "Failed to parse JSON", "raw_text": text}
 
 class ResearchAgent:
-    # CHANGE: Update __init__ signature
     def __init__(self, llm, vector_store, web_search_tool, python_tool, chart_tool):
         self.llm = llm
         self.vector_store = vector_store
         self.web_search_tool = web_search_tool
-        self.python_tool = python_tool # Store Python Tool
-        self.chart_tool = chart_tool   # Store Chart Tool
-        print("Research Agent (Analyst) initialized with Python & Charting capabilities.")
+        self.python_tool = python_tool
+        self.chart_tool = chart_tool
+        print("Research Agent initialized.")
 
     def get_llm_chain(self, prompt_template):
         return prompt_template | self.llm | StrOutputParser() | parse_json_from_string
@@ -49,18 +49,25 @@ class ResearchAgent:
         return context
 
     def classify_hypothesis(self, state: AgentState) -> dict:
-        # (Same logic as before)
         item_to_process = state["nodes_to_process"][0]
         remaining_nodes = state["nodes_to_process"][1:]
         node_id = item_to_process["id"]
-        node = next(h for h in state["hypothesis_tree"] if h["id"] == node_id)
+        
+        # Find the node
+        node = next((h for h in state["hypothesis_tree"] if h["id"] == node_id), None)
+        if not node:
+             print(f"   [Error] Node {node_id} not found in tree. Skipping.")
+             return {"nodes_to_process": remaining_nodes}
         
         print(f"\n--- Executing Node: classify_hypothesis for {node_id} ---")
+        
+        # Log context analysis
+        context_log = f"I'm double-checking this hypothesis: '{node['text']}' against my research."
         
         # Get context from vector store
         context = self.vector_store.search(node["text"])
         
-        # NEW: Get context from scratchpad documents (RAG)
+        # RAG Integration
         scratchpad_id = state.get("scratchpad_id")
         doc_context = []
         if scratchpad_id:
@@ -82,14 +89,23 @@ class ResearchAgent:
         if "error" in response:
             return {"nodes_to_process": remaining_nodes}
 
-        classification = response.get("classification", "branch")
+        # Check if node already has children (force branch if so)
+        existing_children = [n for n in state["hypothesis_tree"] if n["parent_id"] == node_id]
+        if existing_children:
+            print(f"   [ResearchAgent] Node {node_id} has children. Forcing 'branch' classification.")
+            classification = "branch"
+        else:
+            classification = response.get("classification", "branch")
         
         new_work_item = None
         if classification == "leaf":
-            new_work_item = WorkItem(id=node_id, action="analyze")
+            # CRITICAL FIX: Do NOT create an 'analyze' item. We are done with this node.
+            print(f"   [ResearchAgent] Node {node_id} classified as LEAF. Marking complete.")
+            new_work_item = None 
         else:
             new_work_item = WorkItem(id=node_id, action="breakdown")
-          # Update node with classification result
+            
+        # Update node with classification result
         node["is_leaf"] = (classification == "leaf")
         
         # Track tools used
@@ -102,10 +118,10 @@ class ResearchAgent:
         
         updated_tree = [h if h["id"] != node_id else node for h in state["hypothesis_tree"]]
         
-        # If it's a leaf, no further breakdown needed
-        new_nodes_to_process = remaining_nodes + ([new_work_item] if new_work_item else [])
-            
         print_tree(updated_tree, title="UPDATED CLASSIFICATION")
+        
+        # Add new item if exists (Breakdown), otherwise just consume queue
+        new_nodes_to_process = remaining_nodes + ([new_work_item] if new_work_item else [])
         
         # Log to Cosmos DB
         try:
@@ -116,56 +132,21 @@ class ResearchAgent:
         except Exception as e:
             print(f"   [ResearchAgent] Logging failed: {e}")
 
+        # Log decision
+        reasoning = response.get("reasoning", "No reasoning provided")
+        if classification == 'leaf':
+            decision_log = f"I've validated this point. It seems solid. Reasoning: {reasoning[:100]}..."
+        else:
+            decision_log = f"This needs more detail. I'm going to break it down further. Reasoning: {reasoning[:100]}..."
+
         return {
             "hypothesis_tree": updated_tree,
             "nodes_to_process": new_nodes_to_process,
-            "last_completed_item_id": node_id
+            "last_completed_item_id": node_id,
+            "explainability_log": [context_log, decision_log]
         }
 
+    # identify_analysis removed as requested
     def identify_analysis(self, state: AgentState) -> dict:
-        # (Same logic as before)
-        item_to_process = state["nodes_to_process"][0]
-        remaining_nodes = state["nodes_to_process"][1:]
-        node_id = item_to_process["id"]
-        node = next(h for h in state["hypothesis_tree"] if h["id"] == node_id)
-        
-        print(f"\n--- Executing Node: identify_analysis for {node_id} ---")
-        context = self.gather_context(node["text"])
-        
-        analysis_chain = self.get_llm_chain(analysis_prompt)
-        analysis_response = analysis_chain.invoke({"hypothesis_text": node["text"], "context": context})
-        
-        if "error" in analysis_response:
-            return {"nodes_to_process": remaining_nodes}
-
-        analysis_required = analysis_response.get("analysis_required", "No analysis identified")
-        
-        # FUTURE TODO: Here you could check 'analysis_required' and if it involves
-        # specific math, call self.python_tool(analysis_required)
-
-        source_chain = self.get_llm_chain(source_prompt)
-        source_response = source_chain.invoke({"analysis_required": analysis_required, "context": context})
-        
-        source = source_response.get("source", "No source")
-        
-        new_analysis = Analysis(
-            hypothesis_id=node_id,
-            analysis_required=analysis_required,
-            analysis_reasoning=analysis_response.get("reasoning", ""),
-            source_of_reference=source,
-            source_reasoning=source_response.get("reasoning", "")
-        )
-        
-        # Log to Cosmos DB
-        try:
-            CosmosDB().log_interaction("ResearchAgent.identify_analysis", 
-                                     {"hypothesis": node["text"], "context": context}, 
-                                     {"analysis": asdict(new_analysis) if is_dataclass(new_analysis) else str(new_analysis)})
-        except Exception as e:
-            print(f"   [ResearchAgent] Logging failed: {e}")
-
-        return {
-            "analyses_needed": state["analyses_needed"] + [new_analysis],
-            "nodes_to_process": remaining_nodes,
-            "last_completed_item_id": node_id
-        }
+        # Placeholder if needed, but we are removing the workflow
+        return {}
