@@ -32,6 +32,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -44,6 +45,161 @@
 
 /* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+
+  /* Prevent zoom on inputs */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .workspace-header {
+    display: grid !important;
+    grid-template-columns: auto 1fr auto;
+    /* Back, Title, Save/Generate */
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "back title save"
+      "search search generate";
+    gap: 12px;
+    padding: 12px !important;
+    height: auto !important;
+  }
+
+  .header-back {
+    grid-area: back;
+  }
+
+  .header-title {
+    grid-area: title;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .header-title span {
+    font-size: 16px !important;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .header-save {
+    grid-area: save;
+    padding: 0 !important;
+    /* Remove padding to center icon in fixed size */
+    width: 44px;
+    /* Increased from 36px */
+    height: 44px;
+    /* Increased from 36px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0 !important;
+    justify-self: end;
+  }
+
+  /* Scale up icon slightly */
+  .header-save svg {
+    margin: 0 !important;
+    transform: scale(1.2);
+  }
+
+  .header-search {
+    grid-area: search;
+    min-width: 0;
+    grid-column: 1 / 3;
+    /* Span first two columns */
+  }
+
+  /* Adjust search input padding for mobile */
+  .header-search input {
+    padding: 8px 12px 8px 32px !important;
+    box-sizing: border-box !important;
+    /* Fix width calculation */
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .header-search svg {
+    top: 10px !important;
+  }
+
+  .header-generate {
+    grid-area: generate;
+    grid-column: 3;
+    padding: 0 !important;
+    width: 36px;
+    /* Fixed square button */
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0 !important;
+    justify-self: end;
+    z-index: 5;
+    /* Ensure above search if overlap persists */
+  }
+
+  .header-generate svg {
+    margin: 0 !important;
+  }
+
+  .workspace-bottom-panel {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    border-bottom: none !important;
+    width: 100% !important;
+    z-index: 100 !important;
+  }
+
+  /* Dashboard Mobile Styles */
+  .dashboard-header {
+    flex-direction: column !important;
+    gap: 16px !important;
+    align-items: flex-start !important;
+  }
+
+  .dashboard-user-info {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .dashboard-content {
+    padding: 24px 16px !important;
+  }
+
+  .dashboard-create-form {
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+
+  .dashboard-create-form input {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    /* Fix overflow */
+  }
+
+  .dashboard-create-form button {
+    width: 100% !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    /* Fix overflow */
+    margin-top: 8px;
+    /* Add spacing between input and button */
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+    /* Stack cards on mobile */
+  }
 }

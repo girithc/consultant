@@ -1372,7 +1372,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
     const currentPanelHeight = isCollapsed ? HEADER_HEIGHT : EXPANDED_HEIGHT;
 
     return (
-        <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif', overflow: 'hidden', background: '#F8FAFC' }}>
+        <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif', overflow: 'hidden', background: '#F8FAFC' }}>
             <style>{`
         @keyframes slideUpFade { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -1387,13 +1387,13 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
       `}</style>
 
             {/* --- HEADER --- */}
-            <div style={{ padding: '16px 24px', background: '#fff', borderBottom: '1px solid #E2E8F0', display: 'flex', gap: 16, alignItems: 'center', zIndex: 30, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+            <div className="workspace-header" style={{ padding: '16px 24px', background: '#fff', borderBottom: '1px solid #E2E8F0', display: 'flex', gap: 16, alignItems: 'center', zIndex: 30, boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
 
-                <button onClick={onBack} className="action-btn-light" style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                <button onClick={onBack} className="action-btn-light header-back" style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
                     <ArrowLeft size={20} />
                 </button>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: isCollapsed ? 0 : 16 }}>
+                <div className="header-title" style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: isCollapsed ? 0 : 16 }}>
                     <div style={{ background: '#2563EB', padding: 6, borderRadius: 8, color: 'white' }}>
                         <BrainCircuit size={20} />
                     </div>
@@ -1404,7 +1404,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
                     )}
                 </div>
 
-                <div style={{ flex: 1, position: 'relative' }}>
+                <div className="header-search" style={{ flex: 1, position: 'relative' }}>
                     <Search size={16} style={{ position: 'absolute', left: 12, top: 12, color: '#94A3B8' }} />
                     <input
                         value={problem} onChange={(e) => setProblem(e.target.value)}
@@ -1423,7 +1423,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
                     />
                 </div>
 
-                <button onClick={() => generateTree(null, null)} disabled={loading} style={{
+                <button className="header-generate" onClick={() => generateTree(null, null)} disabled={loading} style={{
                     padding: '10px 20px', background: loading ? '#F1F5F9' : '#2563EB',
                     color: loading ? '#94A3B8' : 'white', border: 'none', borderRadius: 8,
                     fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', gap: 8,
@@ -1433,7 +1433,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
                     {loading ? 'Processing...' : 'Generate Strategy'}
                 </button>
 
-                <button onClick={handleSaveWorkspace} disabled={saveStatus === 'saving'} style={{
+                <button className="header-save" onClick={handleSaveWorkspace} disabled={saveStatus === 'saving'} style={{
                     padding: '10px 20px', background: saveStatus === 'saved' ? '#10B981' : '#fff',
                     color: saveStatus === 'saved' ? 'white' : '#475569',
                     border: saveStatus === 'saved' ? 'none' : '1px solid #CBD5E1',
@@ -1469,7 +1469,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
                 </ReactFlow>
 
                 {/* --- BOTTOM PANEL --- */}
-                <div style={{
+                <div className="workspace-bottom-panel" style={{
                     position: 'absolute',
                     left: SCREEN_MARGIN,
                     right: SCREEN_MARGIN,

@@ -41,14 +41,14 @@ function Dashboard({ user, onSelectScratchpad, onLogout }) {
 
     return (
         <div style={{
-            height: '100vh',
+            height: '100dvh',
             display: 'flex',
             flexDirection: 'column',
             background: '#F8FAFC',
             fontFamily: 'Inter, sans-serif'
         }}>
             {/* Header */}
-            <div style={{
+            <div className="dashboard-header" style={{
                 padding: '16px 24px',
                 background: '#fff',
                 borderBottom: '1px solid #E2E8F0',
@@ -66,7 +66,7 @@ function Dashboard({ user, onSelectScratchpad, onLogout }) {
                     </span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div className="dashboard-user-info" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                     <span style={{ fontSize: 14, color: '#64748B' }}>
                         Welcome, <span style={{ fontWeight: 600, color: '#1E293B' }}>{user.username}</span>
                     </span>
@@ -104,7 +104,7 @@ function Dashboard({ user, onSelectScratchpad, onLogout }) {
             </div>
 
             {/* Main Content */}
-            <div style={{
+            <div className="dashboard-content" style={{
                 flex: 1,
                 padding: '48px 24px',
                 overflowY: 'auto',
@@ -129,7 +129,7 @@ function Dashboard({ user, onSelectScratchpad, onLogout }) {
 
                 {/* Create New Scratchpad */}
                 <form onSubmit={createScratchpad} style={{ marginBottom: 32 }}>
-                    <div style={{
+                    <div className="dashboard-create-form" style={{
                         display: 'flex',
                         gap: 12,
                         maxWidth: '600px'
@@ -174,7 +174,7 @@ function Dashboard({ user, onSelectScratchpad, onLogout }) {
                 </form>
 
                 {/* Scratchpad Grid */}
-                <div style={{
+                <div className="dashboard-grid" style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
                     gap: 20
