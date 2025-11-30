@@ -453,6 +453,18 @@ async def get_scratchpad_tree(scratchpad_id: str):
     tree = CosmosDB().load_tree_state(scratchpad_id)
     return {"tree": tree}
 
+class TreeSaveRequest(BaseModel):
+    tree: List[Dict[str, Any]]
+
+@app.post("/scratchpads/{scratchpad_id}/tree")
+async def save_scratchpad_tree(scratchpad_id: str, req: TreeSaveRequest):
+    try:
+        CosmosDB().save_tree_state(scratchpad_id, req.tree)
+        return {"success": True}
+    except Exception as e:
+        print(f"Failed to save tree: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ============================================================
 # DOCUMENT ENDPOINTS
 # ============================================================

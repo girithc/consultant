@@ -6,6 +6,7 @@ import './App.css';
 
 function App() {
   const [user, setUser] = useState(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [currentScratchpad, setCurrentScratchpad] = useState(null);
 
   useEffect(() => {
@@ -17,11 +18,18 @@ function App() {
 
   const handleLogin = (userData) => {
     setUser(userData);
+    setIsGuest(false);
     localStorage.setItem('agent_user', JSON.stringify(userData));
+  };
+
+  const handleGuestLogin = () => {
+    setIsGuest(true);
+    setCurrentScratchpad({ id: null, title: "New Scratchpad" });
   };
 
   const handleLogout = () => {
     setUser(null);
+    setIsGuest(false);
     setCurrentScratchpad(null);
     localStorage.removeItem('agent_user');
   };
@@ -32,14 +40,24 @@ function App() {
 
   const handleBackToDashboard = () => {
     setCurrentScratchpad(null);
+    if (isGuest) {
+      setIsGuest(false);
+    }
   };
 
-  if (!user) {
-    return <Login onLogin={handleLogin} />;
+  if (!user && !isGuest) {
+    return <Login onLogin={handleLogin} onGuest={handleGuestLogin} />;
   }
 
   if (currentScratchpad) {
-    return <Workspace scratchpad={currentScratchpad} onBack={handleBackToDashboard} />;
+    return (
+      <Workspace
+        scratchpad={currentScratchpad}
+        user={user}
+        onBack={handleBackToDashboard}
+        onLogin={handleLogin}
+      />
+    );
   }
 
   return <Dashboard user={user} onSelectScratchpad={handleSelectScratchpad} onLogout={handleLogout} />;

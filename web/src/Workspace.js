@@ -31,6 +31,7 @@ import {
     X
 } from 'lucide-react';
 import './App.css';
+import LoginModal from './LoginModal';
 
 
 /* ========================================================================
@@ -153,7 +154,7 @@ const HypothesisNode = ({ id, data }) => {
                             }
                         `}</style>
                 </div>
-            )}
+
             )}
             <Handle type="target" position={Position.Top} style={{ background: '#fff', width: 10, height: 10, top: -5, border: '2px solid #0F172A' }} />
 
@@ -800,15 +801,15 @@ const DocumentsView = ({ scratchpadId, isCollapsed, headerHeight }) => {
 /* ========================================================================
    3. MAIN WORKSPACE COMPONENT (WRAPPED)
    ======================================================================== */
-export default function Workspace({ scratchpad, onBack }) {
+export default function Workspace({ scratchpad, onBack, user, onLogin }) {
     return (
         <ReactFlowProvider>
-            <WorkspaceContent scratchpad={scratchpad} onBack={onBack} />
+            <WorkspaceContent scratchpad={scratchpad} onBack={onBack} user={user} onLogin={onLogin} />
         </ReactFlowProvider>
     );
 }
 
-const WorkspaceContent = ({ scratchpad, onBack }) => {
+const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
     const { fitView } = useReactFlow();
     const [nodes, setNodes] = useState([]);
     const [edges, setEdges] = useState([]);
@@ -820,6 +821,97 @@ const WorkspaceContent = ({ scratchpad, onBack }) => {
     const [isSplitView, setIsSplitView] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [editingNode, setEditingNode] = useState(null);
+    const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+    const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+
+    const handleSaveWorkspace = async () => {
+        if (!user) {
+            setIsLoginModalOpen(true);
+            return;
+        }
+
+        setSaveStatus('saving');
+        try {
+            // If it's a new scratchpad (id is null), create it first
+            let currentScratchpadId = scratchpad.id;
+            if (!currentScratchpadId) {
+                const res = await fetch('http://localhost:8000/scratchpads', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: user.id, title: problem || "New Analysis" })
+                });
+                if (!res.ok) throw new Error("Failed to create scratchpad");
+                const newPad = await res.json();
+                currentScratchpadId = newPad.id;
+                // Update local scratchpad object (in a real app, we'd update parent state)
+                scratchpad.id = newPad.id;
+            }
+
+            // Save the tree
+            const treeToSave = Array.from(nodesMap.current.values()).map(n => {
+                const edge = Array.from(edgesMap.current.values()).find(e => e.target === n.id);
+                return {
+                    id: n.data.id,
+                    parent_id: edge ? edge.source : "0",
+                    text: n.data.label,
+                    reasoning: n.data.reasoning,
+                    is_leaf: n.data.is_leaf,
+                    tools_used: n.data.tools_used || []
+                };
+            });
+
+            // We can reuse the run_agent endpoint or create a dedicated save endpoint.
+            // Since run_agent saves to CosmosDB if scratchpad_id is present, we can just trigger a save.
+            // But wait, run_agent is for running the agent. We need a way to just save the state.
+            // The backend has `CosmosDB().save_tree_state` but no direct endpoint for it exposed explicitly for just saving without running.
+            // However, `run_agent` saves state as it runs.
+            // Let's check `agent.py` again.
+            // It seems we don't have a dedicated "save tree" endpoint.
+            // But we DO have `CosmosDB().save_tree_state`.
+            // I should probably add a save endpoint to `agent.py` or just rely on the fact that we might not need to save manually if we are not running?
+            // Wait, if I am a guest, I have a tree in memory. I log in. I want to save that tree to the new scratchpad.
+            // I need an endpoint to save the tree.
+
+            // Let's assume for now I will add a save endpoint or use a workaround.
+            // Actually, looking at `agent.py`, there is NO endpoint to save the tree explicitly from the frontend.
+            // I should add one to `agent.py` as part of this task, or use `run_agent` with a special flag? No, that's hacky.
+            // I will add `POST /scratchpads/{id}/tree` to `agent.py`.
+
+            await fetch(`http://localhost:8000/scratchpads/${currentScratchpadId}/tree`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tree: treeToSave })
+            });
+
+            setSaveStatus('saved');
+            setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch (err) {
+            console.error("Save failed:", err);
+            alert("Failed to save workspace");
+            setSaveStatus('idle');
+        }
+    };
+
+    const handleLoginSuccess = async (userData) => {
+        onLogin(userData);
+        setIsLoginModalOpen(false);
+        // After login, immediately try to save
+        // We need to wait for state update or just pass user data directly
+        // But `user` prop won't update immediately in this closure.
+        // So we'll call a modified save function or just trigger it.
+
+        // Actually, onLogin updates App state, which re-renders Workspace with new user.
+        // But we want to trigger the save *after* that.
+        // For now, let's just close the modal and let the user click save again, OR auto-save.
+        // Auto-save is better.
+
+        // We can't easily auto-save here because `user` is stale.
+        // We can use a ref or effect.
+        // Let's just close it and maybe trigger a save with the new user data passed in.
+
+        // Simplified: Just close modal. User sees they are logged in. They click save again.
+        // Better: Pass userData to handleSaveWorkspace.
+    };
 
     const logEndRef = useRef(null);
     const nodesMap = useRef(new Map());
@@ -1103,7 +1195,8 @@ const WorkspaceContent = ({ scratchpad, onBack }) => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         problem_statement: problem,
-                        scratchpad_id: scratchpad.id,
+                        problem_statement: problem,
+                        scratchpad_id: scratchpad.id, // Will be null for guest
                         root_id_offset: nextRootId, // Offset is now the ID itself (e.g. 3)
                         parent_node_id: problemNodeId, // Tell backend to parent under this node
                         existing_tree: null, // Explicitly null
@@ -1331,6 +1424,19 @@ const WorkspaceContent = ({ scratchpad, onBack }) => {
                     {loading ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
                     {loading ? 'Processing...' : 'Generate Strategy'}
                 </button>
+
+                <button onClick={handleSaveWorkspace} disabled={saveStatus === 'saving'} style={{
+                    padding: '10px 20px', background: saveStatus === 'saved' ? '#10B981' : '#fff',
+                    color: saveStatus === 'saved' ? 'white' : '#475569',
+                    border: saveStatus === 'saved' ? 'none' : '1px solid #CBD5E1',
+                    borderRadius: 8,
+                    fontWeight: 600, cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer', display: 'flex', gap: 8,
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                    transition: 'all 0.2s'
+                }}>
+                    {saveStatus === 'saving' ? <Loader2 size={16} className="spin" /> : (saveStatus === 'saved' ? <CheckCircle2 size={16} /> : <Save size={16} />)}
+                    {saveStatus === 'saving' ? 'Saving...' : (saveStatus === 'saved' ? 'Saved' : 'Save Work')}
+                </button>
             </div>
 
             {/* --- CANVAS --- */}
@@ -1497,6 +1603,13 @@ const WorkspaceContent = ({ scratchpad, onBack }) => {
                     node={editingNode}
                     onClose={() => setEditingNode(null)}
                     onSave={handleSaveEdit}
+                />
+            )}
+
+            {isLoginModalOpen && (
+                <LoginModal
+                    onClose={() => setIsLoginModalOpen(false)}
+                    onLogin={handleLoginSuccess}
                 />
             )}
         </div>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { BrainCircuit, LogIn, UserPlus } from 'lucide-react';
 import './App.css';
 
-function Login({ onLogin }) {
+function Login({ onLogin, onGuest }) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -181,6 +181,39 @@ function Login({ onLogin }) {
           >
             {isRegistering ? 'Sign In' : 'Sign Up'}
           </span>
+        </div>
+
+        <div style={{ marginTop: 24, borderTop: '1px solid #E2E8F0', paddingTop: 24 }}>
+          <button
+            type="button"
+            onClick={onGuest}
+            style={{
+              width: '100%',
+              padding: '12px 20px',
+              background: 'white',
+              color: '#475569',
+              border: '1px solid #CBD5E1',
+              borderRadius: 8,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              fontSize: 14,
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = '#F8FAFC';
+              e.currentTarget.style.borderColor = '#94A3B8';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'white';
+              e.currentTarget.style.borderColor = '#CBD5E1';
+            }}
+          >
+            Try without account
+          </button>
         </div>
       </div>
     </div>
