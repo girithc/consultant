@@ -415,6 +415,20 @@ async def real_agent_generator(input_data: AgentInput):
         yield f"data: {json.dumps({'explainability_log': [error_msg], 'activity': {'node': 'error', 'status': 'done'}})}\n\n"
 
 # ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "ok" if agent_app else "error",
+        "agent_initialized": agent_app is not None,
+        "llm_initialized": llm is not None,
+        "openai_key_present": "OPENAI_API_KEY" in os.environ,
+        "env_vars": list(os.environ.keys()) # Debugging helper
+    }
+
+# ============================================================
 # WEBHOOKS
 # ============================================================
 
