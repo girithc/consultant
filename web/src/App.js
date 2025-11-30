@@ -13,6 +13,9 @@ function App() {
     const storedUser = localStorage.getItem('agent_user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
+    } else {
+      setIsGuest(true);
+      setCurrentScratchpad({ id: null, title: "New Scratchpad" });
     }
   }, []);
 
@@ -29,9 +32,9 @@ function App() {
 
   const handleLogout = () => {
     setUser(null);
-    setIsGuest(false);
-    setCurrentScratchpad(null);
     localStorage.removeItem('agent_user');
+    setIsGuest(true);
+    setCurrentScratchpad({ id: null, title: "New Scratchpad" });
   };
 
   const handleSelectScratchpad = (pad) => {
