@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { BrainCircuit, LogIn, UserPlus } from 'lucide-react';
+import { BrainCircuit, UserPlus, LogIn } from 'lucide-react';
+import API_BASE_URL from './config';
 import './App.css';
 
 function Login({ onLogin, onGuest }) {
@@ -14,7 +15,7 @@ function Login({ onLogin, onGuest }) {
     const endpoint = isRegistering ? '/auth/register' : '/auth/login';
 
     try {
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),

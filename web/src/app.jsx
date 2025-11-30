@@ -1,23 +1,24 @@
 import React, { useState, useCallback } from 'react';
-import ReactFlow, { 
-  Background, 
-  Controls, 
-  applyEdgeChanges, 
+import ReactFlow, {
+  Background,
+  Controls,
+  applyEdgeChanges,
   applyNodeChanges,
-  Handle, 
-  Position 
+  Handle,
+  Position
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import dagre from 'dagre';
 import axios from 'axios';
+import API_BASE_URL from './config';
 
 // --- 1. Custom Node Component (Visual Design) ---
 const HypothesisNode = ({ data }) => {
   return (
-    <div style={{ 
-      padding: '10px', 
-      border: '1px solid #777', 
-      borderRadius: '5px', 
+    <div style={{
+      padding: '10px',
+      border: '1px solid #777',
+      borderRadius: '5px',
       background: '#fff',
       minWidth: '250px',
       maxWidth: '300px',
@@ -31,12 +32,12 @@ const HypothesisNode = ({ data }) => {
         {data.label}
       </div>
       {data.reasoning && (
-        <div style={{ 
-          fontStyle: 'italic', 
-          color: '#555', 
-          background: '#f9f9f9', 
-          padding: '5px', 
-          borderRadius: '3px' 
+        <div style={{
+          fontStyle: 'italic',
+          color: '#555',
+          background: '#f9f9f9',
+          padding: '5px',
+          borderRadius: '3px'
         }}>
           "{data.reasoning.substring(0, 80)}..."
         </div>
@@ -100,10 +101,10 @@ export default function App() {
     setLoading(true);
     try {
       // 1. Call your Python Backend
-      const response = await axios.post('http://localhost:8000/generate-tree', null, {
+      const response = await axios.post(`${API_BASE_URL}/generate-tree`, null, {
         params: { problem }
       });
-      
+
       const rawTree = response.data.hypothesis_tree;
 
       // 2. Convert Python Dicts to React Flow Nodes
@@ -143,19 +144,19 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Controls Header */}
       <div style={{ padding: '20px', background: '#f0f0f0', borderBottom: '1px solid #ccc', display: 'flex', gap: '10px' }}>
-        <input 
-          value={problem} 
-          onChange={(e) => setProblem(e.target.value)} 
+        <input
+          value={problem}
+          onChange={(e) => setProblem(e.target.value)}
           style={{ flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
         />
-        <button 
-          onClick={generateTree} 
+        <button
+          onClick={generateTree}
           disabled={loading}
-          style={{ 
-            padding: '10px 20px', 
-            background: loading ? '#ccc' : '#007bff', 
-            color: 'white', 
-            border: 'none', 
+          style={{
+            padding: '10px 20px',
+            background: loading ? '#ccc' : '#007bff',
+            color: 'white',
+            border: 'none',
             borderRadius: '4px',
             cursor: loading ? 'not-allowed' : 'pointer'
           }}

@@ -1,7 +1,7 @@
 langchain-core
 langchain-community
 langgraph
-optimum
+
 langchain_openai
 python-dotenv
 langchain-experimental 

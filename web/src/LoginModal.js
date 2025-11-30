@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
+import API_BASE_URL from './config';
 
 const LoginModal = ({ onClose, onLogin }) => {
     const [isRegistering, setIsRegistering] = useState(false);
@@ -13,7 +14,7 @@ const LoginModal = ({ onClose, onLogin }) => {
         setError('');
         setLoading(true);
 
-        const endpoint = isRegistering ? 'http://localhost:8000/auth/register' : 'http://localhost:8000/auth/login';
+        const endpoint = isRegistering ? `${API_BASE_URL}/auth/register` : `${API_BASE_URL}/auth/login`;
 
         try {
             const res = await fetch(endpoint, {

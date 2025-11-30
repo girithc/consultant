@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 import LoginModal from './LoginModal';
+import API_BASE_URL from './config';
 
 
 /* ========================================================================
@@ -833,7 +834,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
             // If it's a new scratchpad (id is null), create it first
             let currentScratchpadId = scratchpad.id;
             if (!currentScratchpadId) {
-                const res = await fetch('http://localhost:8000/scratchpads', {
+                const res = await fetch(`${API_BASE_URL}/scratchpads`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user_id: user.id, title: problem || "New Analysis" })
@@ -875,7 +876,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
             // I should add one to `agent.py` as part of this task, or use `run_agent` with a special flag? No, that's hacky.
             // I will add `POST /scratchpads/{id}/tree` to `agent.py`.
 
-            await fetch(`http://localhost:8000/scratchpads/${currentScratchpadId}/tree`, {
+            await fetch(`${API_BASE_URL}/scratchpads/${currentScratchpadId}/tree`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tree: treeToSave })
@@ -925,7 +926,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
     useEffect(() => {
         const loadSavedTree = async () => {
             try {
-                const response = await fetch(`http://localhost:8000/scratchpads/${scratchpad.id}/tree`);
+                const response = await fetch(`${API_BASE_URL}/scratchpads/${scratchpad.id}/tree`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.tree && data.tree.length > 0) {
@@ -1198,7 +1199,7 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
             }, 250);
 
             try {
-                const response = await fetch('http://localhost:8000/run_agent', {
+                const response = await fetch(`${API_BASE_URL}/run_agent`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

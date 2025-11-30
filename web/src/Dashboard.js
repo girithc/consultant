@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrainCircuit, Plus, LogOut, FolderOpen, Calendar } from 'lucide-react';
+import { Plus, LogOut, BrainCircuit, FolderOpen, Calendar } from 'lucide-react';
+import API_BASE_URL from './config';
 import './App.css';
 
 function Dashboard({ user, onSelectScratchpad, onLogout }) {
@@ -8,7 +9,7 @@ function Dashboard({ user, onSelectScratchpad, onLogout }) {
 
     const fetchScratchpads = useCallback(async () => {
         try {
-            const res = await fetch(`http://localhost:8000/scratchpads/${user.id}`);
+            const res = await fetch(`${API_BASE_URL}/scratchpads/${user.id}`);
             const data = await res.json();
             setScratchpads(data);
         } catch (err) {
@@ -25,7 +26,7 @@ function Dashboard({ user, onSelectScratchpad, onLogout }) {
         if (!newTitle.trim()) return;
 
         try {
-            const res = await fetch('http://localhost:8000/scratchpads', {
+            const res = await fetch(`${API_BASE_URL}/scratchpads`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: user.id, title: newTitle }),

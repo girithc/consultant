@@ -415,6 +415,15 @@ async def real_agent_generator(input_data: AgentInput):
         yield f"data: {json.dumps({'explainability_log': [error_msg], 'activity': {'node': 'error', 'status': 'done'}})}\n\n"
 
 # ============================================================
+# WEBHOOKS
+# ============================================================
+
+@app.post("/gmail/webhook")
+async def gmail_webhook(request: Request):
+    # Dummy endpoint to suppress 404s from legacy integrations
+    return {"status": "ignored"}
+
+# ============================================================
 # AUTH & SCRATCHPAD ENDPOINTS
 # ============================================================
 
@@ -557,8 +566,14 @@ if __name__ == "__main__":
     if agent_app:
         print("STARTING PRODUCTION AGENT SERVER")
         print("Endpoint: http://localhost:8000/run_agent")
+        print("Agent Graph: COMPILED")
     else:
         print("STARTING SERVER (WARNING: Agent Failed to Initialize)")
+        if "OPENAI_API_KEY" not in os.environ:
+            print("ERROR: OPENAI_API_KEY environment variable is missing!")
+        else:
+            print("ERROR: Check logs for initialization failures.")
+            
     print("="*60)
     
     port = int(os.environ.get("PORT", 8000))
