@@ -17,7 +17,6 @@ import {
     CheckCircle2,
     BrainCircuit,
     Search,
-    ChevronRight,
     ChevronDown,
     ChevronUp,
     Terminal,
@@ -41,7 +40,6 @@ import LoginModal from './LoginModal';
 /* ========================================================================
    1. CUSTOM NODE COMPONENT
    ======================================================================== */
-import { Eye } from 'lucide-react';
 
 const HypothesisNode = ({ id, data }) => {
     const [isNew, setIsNew] = useState(true);
@@ -1078,11 +1076,21 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
         await generateTree(existingTree, id);
     };
 
-    // Expose handleSaveEdit to window for HypothesisNode
+
+    // Expose handleSaveEdit to window for HypothesisNode via ref to avoid dependency cycles
+    const handleSaveEditRef = useRef(handleSaveEdit);
     useEffect(() => {
-        window.handleNodeSave = handleSaveEdit;
+        handleSaveEditRef.current = handleSaveEdit;
+    });
+
+    useEffect(() => {
+        window.handleNodeSave = (...args) => {
+            if (handleSaveEditRef.current) {
+                handleSaveEditRef.current(...args);
+            }
+        };
         return () => { window.handleNodeSave = null; };
-    }, [handleSaveEdit]);
+    }, []);
 
     const handleStreamUpdate = (data) => {
         // Prioritize explicit activity from backend
