@@ -1195,7 +1195,6 @@ const WorkspaceContent = ({ scratchpad, onBack, user, onLogin }) => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         problem_statement: problem,
-                        problem_statement: problem,
                         scratchpad_id: scratchpad.id, // Will be null for guest
                         root_id_offset: nextRootId, // Offset is now the ID itself (e.g. 3)
                         parent_node_id: problemNodeId, // Tell backend to parent under this node
