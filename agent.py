@@ -60,6 +60,10 @@ def load_llm():
         if "OPENAI_API_KEY" not in os.environ:
             print("CRITICAL: OPENAI_API_KEY missing.")
             return None
+        
+        # Sanitize key to remove potential newlines from copy-paste
+        os.environ["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"].strip()
+        
         return ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
     except Exception as e:
         print(f"Error loading LLM: {e}")

@@ -14,3 +14,4 @@ azure-cosmos
 PyPDF2
 python-docx
 langchain-text-splitters
+faiss-cpu
